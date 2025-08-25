@@ -3,5 +3,4 @@ beautifulsoup4
 python-dateutil
 google-api-python-client
 google-auth
-google-auth-oauthlib
-playwright
+google-auth-oauthli
