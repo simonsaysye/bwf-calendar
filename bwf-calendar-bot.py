@@ -1,11 +1,11 @@
 import os
-import requests
-from bs4 import BeautifulSoup
 import datetime
 from dateutil import parser
 from dateutil.relativedelta import relativedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import logging
 
 # ----------------------------
@@ -15,8 +15,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),       # prints to GitHub Actions log
-        logging.FileHandler("scraper.log")  # local file when running manually
+        logging.StreamHandler(),
+        logging.FileHandler("scraper.log")
     ]
 )
 
@@ -31,11 +31,6 @@ if not CALENDAR_ID:
     raise ValueError("GOOGLE_CALENDAR_ID not set!")
 
 URL = "https://corporate.bwfbadminton.com/events/calendar/"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/114.0.0.0 Safari/537.36"
-}
 
 # ----------------------------
 # Google Calendar authentication
@@ -54,19 +49,24 @@ def get_authenticated_service():
         raise
 
 # ----------------------------
-# Scrape BWF corporate calendar
+# Scrape BWF corporate calendar using Playwright
 # ----------------------------
 def scrape_corporate_calendar():
-    logging.info("Fetching BWF corporate calendar...")
-    try:
-        resp = requests.get(URL, headers=HEADERS, timeout=20)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        logging.error(f"Error fetching page: {e}")
-        return []
-
-    soup = BeautifulSoup(resp.text, "html.parser")
+    logging.info("Fetching BWF corporate calendar with Playwright...")
     events = []
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(URL)
+            html = page.content()
+            browser.close()
+    except Exception as e:
+        logging.error(f"Error fetching page via Playwright: {e}")
+        return events
+
+    soup = BeautifulSoup(html, "html.parser")
 
     name_keywords = ['sudirman', 'world championships', 'world tour finals']
     category_keyword = 'super'
@@ -149,7 +149,6 @@ def create_calendar_events(events, service):
 
             end_date_exclusive = end_date + datetime.timedelta(days=1)
 
-            # Check if event already exists
             existing_events = service.events().list(
                 calendarId=CALENDAR_ID,
                 q=event_data['name'],
