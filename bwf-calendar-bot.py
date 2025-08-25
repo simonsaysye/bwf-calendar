@@ -32,10 +32,20 @@ if not CALENDAR_ID:
 
 URL = "https://corporate.bwfbadminton.com/events/calendar/"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/114.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0"
 }
+
 
 # ----------------------------
 # Google Calendar authentication
@@ -58,8 +68,17 @@ def get_authenticated_service():
 # ----------------------------
 def scrape_corporate_calendar():
     logging.info("Fetching BWF corporate calendar...")
+    
+    # Use a session for better connection handling
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    
     try:
-        resp = requests.get(URL, headers=HEADERS, timeout=20)
+        # Add a small delay to seem more human-like
+        import time
+        time.sleep(2)
+        
+        resp = session.get(URL, timeout=30)  # Increased timeout
         resp.raise_for_status()
     except requests.RequestException as e:
         logging.error(f"Error fetching page: {e}")
