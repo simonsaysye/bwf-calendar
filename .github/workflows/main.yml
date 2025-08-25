@@ -23,7 +23,7 @@ jobs:
           pip install requests beautifulsoup4 google-api-python-client python-dateutil
 
       - name: Create credentials.json
-        run: printf '%s' "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" > credentials.json
+        run: echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_BASE64 }}" | base64 --decode > credentials.json
 
       - name: Set environment variables
         run: echo "GOOGLE_CALENDAR_ID=${{ secrets.GOOGLE_CALENDAR_ID }}" >> $GITHUB_ENV
