@@ -59,9 +59,11 @@ def scrape_corporate_calendar():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(URL, timeout=30000)  # 30s timeout
-            # Wait until the calendar loads
-            page.wait_for_selector("#ajaxCalender", timeout=15000)  # wait up to 15s
+            page.goto(URL, timeout=45000)  # 45s max
+            # Wait for network to finish loading
+            page.wait_for_load_state("networkidle", timeout=30000)  # 30s
+            # Ensure the calendar wrapper exists
+            page.wait_for_selector("#ajaxCalender", timeout=15000, state="attached")
             html = page.content()
             browser.close()
     except Exception as e:
