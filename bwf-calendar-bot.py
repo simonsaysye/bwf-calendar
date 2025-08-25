@@ -9,13 +9,26 @@ from googleapiclient.discovery import build
 import logging
 
 # ----------------------------
+# Logging setup
+# ----------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),       # prints to GitHub Actions log
+        logging.FileHandler("scraper.log")  # local file when running manually
+    ]
+)
+
+# ----------------------------
 # Configuration via environment variables
 # ----------------------------
 SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials.json")
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
 
 if not CALENDAR_ID:
-    raise ValueError("Environment variable GOOGLE_CALENDAR_ID not set!")
+    logging.error("Environment variable GOOGLE_CALENDAR_ID not set!")
+    raise ValueError("GOOGLE_CALENDAR_ID not set!")
 
 URL = "https://corporate.bwfbadminton.com/events/calendar/"
 HEADERS = {
@@ -23,30 +36,26 @@ HEADERS = {
 }
 
 # ----------------------------
-# Logging setup
-# ----------------------------
-logging.basicConfig(
-    filename='scraper.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-# ----------------------------
 # Google Calendar authentication
 # ----------------------------
 def get_authenticated_service():
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=[
-            'https://www.googleapis.com/auth/calendar.events',
-            'https://www.googleapis.com/auth/calendar.readonly'
-        ]
-    )
-    return build('calendar', 'v3', credentials=creds)
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=[
+                'https://www.googleapis.com/auth/calendar.events',
+                'https://www.googleapis.com/auth/calendar.readonly'
+            ]
+        )
+        return build('calendar', 'v3', credentials=creds)
+    except Exception as e:
+        logging.error(f"Failed to authenticate with Google Calendar: {e}")
+        raise
 
 # ----------------------------
 # Scrape BWF corporate calendar
 # ----------------------------
 def scrape_corporate_calendar():
+    logging.info("Fetching BWF corporate calendar...")
     try:
         resp = requests.get(URL, headers=HEADERS, timeout=20)
         resp.raise_for_status()
@@ -79,10 +88,10 @@ def scrape_corporate_calendar():
 
             country = cols[1].get_text(strip=True)
             dates = cols[2].get_text(" ", strip=True)
-            
+
             name_tag = cols[3].select_one("div.name a")
             name = name_tag.get_text(strip=True) if name_tag else cols[3].get_text(strip=True)
-            
+
             category = cols[5].get_text(strip=True)
             city = cols[6].get_text(strip=True)
 
@@ -105,6 +114,7 @@ def scrape_corporate_calendar():
                     "year": current_year
                 })
 
+    logging.info(f"Scraping complete. Found {len(events)} matching tournaments.")
     return events
 
 # ----------------------------
@@ -117,18 +127,18 @@ def create_calendar_events(events, service):
             date_str = f"{event_data['dates']} {event_data['month']} {event_data['year']}"
             date_str = " ".join(date_str.split())
             date_parts = date_str.split('-')
-            
+
             if len(date_parts) > 1:
                 start_part = date_parts[0].strip()
                 end_part = date_parts[1].strip()
-                
+
                 start_date = parser.parse(f"{start_part} {event_data['month']} {event_data['year']}").date()
 
                 if not any(c.isalpha() for c in end_part):
                     end_date = parser.parse(f"{end_part} {event_data['month']} {event_data['year']}").date()
                 else:
                     end_date = parser.parse(f"{end_part} {event_data['year']}").date()
-                
+
                 if end_date < start_date:
                     end_date += relativedelta(months=1)
             else:
@@ -137,7 +147,7 @@ def create_calendar_events(events, service):
 
             end_date_exclusive = end_date + datetime.timedelta(days=1)
 
-            # Check for existing events
+            # Check if event already exists
             existing_events = service.events().list(
                 calendarId=CALENDAR_ID,
                 q=event_data['name'],
@@ -148,7 +158,7 @@ def create_calendar_events(events, service):
             ).execute()
 
             if existing_events.get('items'):
-                logging.info(f"Skipping: '{event_data['name']}' already exists.")
+                logging.info(f"Skipped: '{event_data['name']}' already exists.")
                 continue
 
             description = f"Prize Money: {event_data['prize_money']}" if event_data['prize_money'] else None
@@ -162,7 +172,7 @@ def create_calendar_events(events, service):
             }
 
             service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-            logging.info(f"Created: {event_data['name']} ({start_date} - {end_date})")
+            logging.info(f"Created event: '{event_data['name']}' ({start_date} - {end_date})")
 
         except Exception as e:
             logging.error(f"Error creating event '{event_data['name']}': {e}")
@@ -171,6 +181,7 @@ def create_calendar_events(events, service):
 # Main
 # ----------------------------
 if __name__ == '__main__':
+    logging.info("Starting BWF Calendar scraper script...")
     try:
         service = get_authenticated_service()
         tournaments = scrape_corporate_calendar()
@@ -178,5 +189,6 @@ if __name__ == '__main__':
             create_calendar_events(tournaments, service)
         else:
             logging.info("No tournaments found that match the criteria.")
+        logging.info("Script finished successfully.")
     except Exception as e:
         logging.error(f"An error occurred during the process: {e}")
