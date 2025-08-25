@@ -59,7 +59,9 @@ def scrape_corporate_calendar():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(URL)
+            page.goto(URL, timeout=30000)  # 30s timeout
+            # Wait until the calendar loads
+            page.wait_for_selector("#ajaxCalender", timeout=15000)  # wait up to 15s
             html = page.content()
             browser.close()
     except Exception as e:
@@ -74,7 +76,7 @@ def scrape_corporate_calendar():
 
     calendar_wrapper = soup.select_one("#ajaxCalender")
     if not calendar_wrapper:
-        logging.warning("Calendar wrapper not found in HTML.")
+        logging.warning("Calendar wrapper not found in HTML after waiting.")
         return events
 
     for month_div in calendar_wrapper.select(".item-results"):
