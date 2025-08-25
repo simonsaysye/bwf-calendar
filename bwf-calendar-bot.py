@@ -32,7 +32,9 @@ if not CALENDAR_ID:
 
 URL = "https://corporate.bwfbadminton.com/events/calendar/"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; BWF-Schedule-Bot/1.0; +https://example.com/contact)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/114.0.0.0 Safari/537.36"
 }
 
 # ----------------------------
