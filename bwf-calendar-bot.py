@@ -1,3 +1,4 @@
+import os
 import requests
 from bs4 import BeautifulSoup
 import datetime
@@ -5,38 +6,64 @@ from dateutil import parser
 from dateutil.relativedelta import relativedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import logging
 
-SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly']
-SERVICE_ACCOUNT_FILE = 'credentials.json'
-CALENDAR_ID = 'aecf58ddb7d31c04819a9ad9bdd718a17609f236da31215d1ce7d08861ffefdc@group.calendar.google.com'
+# ----------------------------
+# Configuration via environment variables
+# ----------------------------
+SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials.json")
+CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
+
+if not CALENDAR_ID:
+    raise ValueError("Environment variable GOOGLE_CALENDAR_ID not set!")
 
 URL = "https://corporate.bwfbadminton.com/events/calendar/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; BWF-Schedule-Bot/1.0; +https://example.com/contact)"
 }
 
+# ----------------------------
+# Logging setup
+# ----------------------------
+logging.basicConfig(
+    filename='scraper.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# ----------------------------
+# Google Calendar authentication
+# ----------------------------
 def get_authenticated_service():
     creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        SERVICE_ACCOUNT_FILE, scopes=[
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/calendar.readonly'
+        ]
+    )
     return build('calendar', 'v3', credentials=creds)
 
+# ----------------------------
+# Scrape BWF corporate calendar
+# ----------------------------
 def scrape_corporate_calendar():
     try:
         resp = requests.get(URL, headers=HEADERS, timeout=20)
         resp.raise_for_status()
     except requests.RequestException as e:
-        print("Error fetching page:", e)
+        logging.error(f"Error fetching page: {e}")
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
     events = []
-    
+
     name_keywords = ['sudirman', 'world championships', 'world tour finals']
     category_keyword = 'super'
     current_year = '2025'
 
     calendar_wrapper = soup.select_one("#ajaxCalender")
     if not calendar_wrapper:
+        logging.warning("Calendar wrapper not found in HTML.")
         return events
 
     for month_div in calendar_wrapper.select(".item-results"):
@@ -80,8 +107,11 @@ def scrape_corporate_calendar():
 
     return events
 
+# ----------------------------
+# Create Google Calendar events
+# ----------------------------
 def create_calendar_events(events, service):
-    print("Creating Google Calendar events...")
+    logging.info("Creating Google Calendar events...")
     for event_data in events:
         try:
             date_str = f"{event_data['dates']} {event_data['month']} {event_data['year']}"
@@ -92,30 +122,22 @@ def create_calendar_events(events, service):
                 start_part = date_parts[0].strip()
                 end_part = date_parts[1].strip()
                 
-                # Parse start date
-                start_date_str = f"{start_part} {event_data['month']} {event_data['year']}"
-                start_date = parser.parse(start_date_str).date()
+                start_date = parser.parse(f"{start_part} {event_data['month']} {event_data['year']}").date()
 
-                # Parse end date
-                if not any(c.isalpha() for c in end_part):  # no month in end
-                    end_date_str = f"{end_part} {event_data['month']} {event_data['year']}"
-                    end_date = parser.parse(end_date_str).date()
-                else:  # month present in end
-                    end_date_str = f"{end_part} {event_data['year']}"
-                    end_date = parser.parse(end_date_str).date()
+                if not any(c.isalpha() for c in end_part):
+                    end_date = parser.parse(f"{end_part} {event_data['month']} {event_data['year']}").date()
+                else:
+                    end_date = parser.parse(f"{end_part} {event_data['year']}").date()
                 
-                # Adjust if end_date < start_date and tournament < 10 days
                 if end_date < start_date:
                     end_date += relativedelta(months=1)
-            
             else:
                 start_date = parser.parse(date_str).date()
                 end_date = start_date
 
-            # Make end date exclusive
             end_date_exclusive = end_date + datetime.timedelta(days=1)
 
-            # Check if event already exists
+            # Check for existing events
             existing_events = service.events().list(
                 calendarId=CALENDAR_ID,
                 q=event_data['name'],
@@ -126,7 +148,7 @@ def create_calendar_events(events, service):
             ).execute()
 
             if existing_events.get('items'):
-                print(f"Skipping: '{event_data['name']}' already exists.")
+                logging.info(f"Skipping: '{event_data['name']}' already exists.")
                 continue
 
             description = f"Prize Money: {event_data['prize_money']}" if event_data['prize_money'] else None
@@ -140,11 +162,14 @@ def create_calendar_events(events, service):
             }
 
             service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-            print(f"Created: {event_data['name']} ({start_date} - {end_date})")
+            logging.info(f"Created: {event_data['name']} ({start_date} - {end_date})")
 
         except Exception as e:
-            print(f"Error creating event '{event_data['name']}': {e}")
+            logging.error(f"Error creating event '{event_data['name']}': {e}")
 
+# ----------------------------
+# Main
+# ----------------------------
 if __name__ == '__main__':
     try:
         service = get_authenticated_service()
@@ -152,6 +177,6 @@ if __name__ == '__main__':
         if tournaments:
             create_calendar_events(tournaments, service)
         else:
-            print("No tournaments found that match the criteria.")
+            logging.info("No tournaments found that match the criteria.")
     except Exception as e:
-        print(f"An error occurred during the process: {e}")
+        logging.error(f"An error occurred during the process: {e}")
