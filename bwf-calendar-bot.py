@@ -34,7 +34,7 @@ def scrape_corporate_calendar():
     
     name_keywords = ['sudirman', 'world championships', 'world tour finals']
     include_categories = ['super 300', 'super 500', 'super 750', 'super 1000']
-    current_year = '2025'
+    current_year = str(datetime.datetime.now().year)
 
     calendar_wrapper = soup.select_one("#ajaxCalender")
     if not calendar_wrapper:
