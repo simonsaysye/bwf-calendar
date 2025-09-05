@@ -9,6 +9,7 @@ from googleapiclient.discovery import build
 SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly']
 SERVICE_ACCOUNT_FILE = 'credentials.json'
 CALENDAR_ID = 'aecf58ddb7d31c04819a9ad9bdd718a17609f236da31215d1ce7d08861ffefdc@group.calendar.google.com'
+RESET_CALENDAR = False # Set to True to clear all events from the calendar before adding new ones
 
 URL = "https://corporate.bwfbadminton.com/events/calendar/"
 HEADERS = {
@@ -32,7 +33,7 @@ def scrape_corporate_calendar():
     events = []
     
     name_keywords = ['sudirman', 'world championships', 'world tour finals']
-    category_keyword = 'super'
+    include_categories = ['super 300', 'super 500', 'super 750', 'super 1000']
     current_year = '2025'
 
     calendar_wrapper = soup.select_one("#ajaxCalender")
@@ -65,8 +66,11 @@ def scrape_corporate_calendar():
                 prize_tag = detail_row.select_one(".bwf-button_group .bwf-button")
                 if prize_tag:
                     prize_money = prize_tag.get_text(" ", strip=True).replace("PRIZE MONEY", "").strip()
+            
+            is_major_by_name = any(k.lower() in name.lower() for k in name_keywords)
+            is_major_by_category = any(cat.lower() in category.lower() for cat in include_categories)
 
-            if category_keyword.lower() in category.lower() or any(k.lower() in name.lower() for k in name_keywords):
+            if is_major_by_category or is_major_by_name:
                 events.append({
                     "name": name,
                     "dates": dates,
@@ -80,6 +84,22 @@ def scrape_corporate_calendar():
 
     return events
 
+def clear_calendar(service):
+    print("Clearing all events from the calendar...")
+    page_token = None
+    while True:
+        events = service.events().list(calendarId=CALENDAR_ID, pageToken=page_token).execute()
+        for event in events['items']:
+            try:
+                service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute()
+                print(f"Deleted: {event.get('summary', 'Unknown Event')}")
+            except Exception as e:
+                print(f"Error deleting event {event.get('summary', 'N/A')}: {e}")
+        page_token = events.get('nextPageToken')
+        if not page_token:
+            break
+    print("Calendar has been cleared.")
+
 def create_calendar_events(events, service):
     print("Creating Google Calendar events...")
     for event_data in events:
@@ -92,19 +112,16 @@ def create_calendar_events(events, service):
                 start_part = date_parts[0].strip()
                 end_part = date_parts[1].strip()
                 
-                # Parse start date
                 start_date_str = f"{start_part} {event_data['month']} {event_data['year']}"
                 start_date = parser.parse(start_date_str).date()
 
-                # Parse end date
-                if not any(c.isalpha() for c in end_part):  # no month in end
+                if not any(c.isalpha() for c in end_part):
                     end_date_str = f"{end_part} {event_data['month']} {event_data['year']}"
                     end_date = parser.parse(end_date_str).date()
-                else:  # month present in end
+                else:
                     end_date_str = f"{end_part} {event_data['year']}"
                     end_date = parser.parse(end_date_str).date()
                 
-                # Adjust if end_date < start_date and tournament < 10 days
                 if end_date < start_date:
                     end_date += relativedelta(months=1)
             
@@ -112,10 +129,8 @@ def create_calendar_events(events, service):
                 start_date = parser.parse(date_str).date()
                 end_date = start_date
 
-            # Make end date exclusive
             end_date_exclusive = end_date + datetime.timedelta(days=1)
 
-            # Check if event already exists
             existing_events = service.events().list(
                 calendarId=CALENDAR_ID,
                 q=event_data['name'],
@@ -144,10 +159,15 @@ def create_calendar_events(events, service):
 
         except Exception as e:
             print(f"Error creating event '{event_data['name']}': {e}")
+    print("\nAll new events have been successfully created.")
 
 if __name__ == '__main__':
     try:
         service = get_authenticated_service()
+
+        if RESET_CALENDAR:
+            clear_calendar(service)
+
         tournaments = scrape_corporate_calendar()
         if tournaments:
             create_calendar_events(tournaments, service)
